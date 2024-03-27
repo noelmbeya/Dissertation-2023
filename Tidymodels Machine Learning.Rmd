@@ -1,0 +1,800 @@
+---
+title: "MSc Dissertation 2023"
+author: "Noel Mbeya"
+date: "2023-06-03"
+output: pdf_document
+---
+#Import data and load libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+m1_data = read.csv("M1_data.csv")
+library(ggplot2)
+library(tidyverse)
+library(themis)
+library(tidymodels)
+library(agua)
+library(kernlab)
+library(discrim)
+library(klaR)
+library(caret)
+library(parallel)
+library(doParallel)
+library(randomForest)
+library(ranger)
+library(naivebayes)
+library(vip)
+library(base)
+m1_data
+```
+
+## Renaming 
+
+```{r}
+#pre-processing 
+is.null(m1_data) #checking for null values in the data set
+m1_data <- rename(m1_data, apple_count = appleproducts_count,
+                  f_battery = f_batterylife, f_multi = f_multitasking,
+                  f_perloss = f_performanceloss, age = age_group,
+                  income = income_group) #renaming the different columns in the data set
+
+m1_data$status[m1_data$status == "Student ant employed"] <- "Student & Employed" #fixing spelling error
+m1_data %>% group_by(m1_purchase) %>% count()
+```
+
+## Transforming Data
+
+```{r}
+#transforming values into numeric
+m1_data$user_pcmac[m1_data$user_pcmac == "Apple"] <- 0
+m1_data$user_pcmac[m1_data$user_pcmac == "PC"] <- 1
+m1_data$user_pcmac[m1_data$user_pcmac == "Other"] <- 1
+m1_data$user_pcmac[m1_data$user_pcmac == "Hp"] <- 1
+
+m1_data$status[m1_data$status == "Student"] <- 0
+m1_data$status[m1_data$status == "Employed"] <- 1
+m1_data$status[m1_data$status == "Student & Employed"] <- 1
+m1_data$status[m1_data$status == "Self-Employed"] <- 1
+m1_data$status[m1_data$status == "Retired"] <- 1
+m1_data$status[m1_data$status == "Unemployed"] <- 0
+
+m1_data$gender[m1_data$gender == "Female"] <- 0
+m1_data$gender[m1_data$gender == "Male"] <- 1
+
+m1_data[, c("trust_apple", "familiarity_m1")][m1_data[, c("trust_apple", "familiarity_m1")] == "No"] <- 0
+m1_data[, c("trust_apple", "familiarity_m1")][m1_data[, c("trust_apple", "familiarity_m1")] == "Yes"] <- 1
+
+#aggregating domain variable from 21 levels to 3
+m1_data$domain[m1_data$domain == "Science"] <- 0
+m1_data$domain[m1_data$domain == "Finance"] <- 1
+m1_data$domain[m1_data$domain == "IT & Technology"] <- 0
+m1_data$domain[m1_data$domain == "Arts & Culture"] <- 2
+m1_data$domain[m1_data$domain == "Hospitality"] <- 2
+m1_data$domain[m1_data$domain == "Politics"] <- 1
+m1_data$domain[m1_data$domain == "Social Sciences"] <- 2
+m1_data$domain[m1_data$domain == "Administration & Public Services"] <- 1
+m1_data$domain[m1_data$domain == "Education"] <- 2
+m1_data$domain[m1_data$domain == "Engineering"] <- 0
+m1_data$domain[m1_data$domain == "Marketing"] <- 1
+m1_data$domain[m1_data$domain == "Healthcare"] <- 0
+m1_data$domain[m1_data$domain == "Business"] <- 1
+m1_data$domain[m1_data$domain == "Retired"] <- 0
+m1_data$domain[m1_data$domain == "Economics"] <- 1
+m1_data$domain[m1_data$domain == "Law"] <- 1
+m1_data$domain[m1_data$domain == "Agriculture"] <- 0
+m1_data$domain[m1_data$domain == "Communication "] <- 1
+m1_data$domain[m1_data$domain == "Realestate"] <- 1
+m1_data$domain[m1_data$domain == "Logistics"] <- 1
+m1_data$domain[m1_data$domain == "Consulting "] <- 1
+m1_data$domain[m1_data$domain == "Retail"] <- 1
+
+m1_data$age[m1_data$age == 1] <- 18
+m1_data$age[m1_data$age == 2] <- 23
+m1_data$age[m1_data$age == 3] <- 28
+m1_data$age[m1_data$age == 4] <- 33
+m1_data$age[m1_data$age == 5] <- 38
+m1_data$age[m1_data$age == 6] <- 43
+m1_data$age[m1_data$age == 7] <- 48
+m1_data$age[m1_data$age == 8] <- 53
+m1_data$age[m1_data$age == 9] <- 58
+m1_data$age[m1_data$age == 10] <- 60
+
+m1_data$income[m1_data$income == 1] <- 0
+m1_data$income[m1_data$income == 2] <- 7500
+m1_data$income[m1_data$income == 3] <- 22500
+m1_data$income[m1_data$income == 4] <- 37500
+m1_data$income[m1_data$income == 5] <- 52500
+m1_data$income[m1_data$income == 6] <- 67500
+m1_data$income[m1_data$income == 7] <- 75000
+
+m1_data$m1_purchase[m1_data$m1_purchase == "No"] <- 0
+m1_data$m1_purchase[m1_data$m1_purchase == "Yes"] <- 1
+```
+
+#converting to numeric and factor
+
+```{r}
+m1_data$m1_purchase = as.factor(m1_data$m1_purchase)
+m1_data$gender = as.integer(m1_data$gender)
+m1_data$trust_apple = as.integer(m1_data$trust_apple)
+m1_data$familiarity_m1 = as.integer(m1_data$familiarity_m1)
+m1_data$status = as.integer(m1_data$status)
+m1_data$domain = as.integer(m1_data$domain)
+m1_data$user_pcmac = as.integer(m1_data$user_pcmac)
+m1_data$age = as.integer(m1_data$age)
+m1_data$income = as.integer(m1_data$income)
+```
+
+# data summary statistics
+```{r}
+m1_data %>% group_by(age) %>% count()
+summary(m1_data$age)
+m1_data %>% summarise(s = sd(age), mean = mean(age))
+m1_data %>% summarise(s = sd(income), mean = mean(income))
+m1_data %>% summarise(min = min(f_battery), max = max(f_battery), mean = mean(f_battery), s = sd(f_battery))
+m1_data %>% summarise(min = min(f_multi), max = max(f_multi), mean = mean(f_multi), s = sd(f_multi))
+m1_data %>% summarise(min = min(f_performance), max = max(f_performance), mean = mean(f_performance), s = sd(f_performance))
+m1_data %>% summarise(min = min(f_perloss), max = max(f_perloss), mean = mean(f_perloss), s = sd(f_perloss))
+m1_data %>% summarise(min = min(f_size), max = max(f_size), mean = mean(f_size), s = sd(f_size))
+m1_data %>% summarise(min = min(f_noise), max = max(f_noise), mean = mean(f_noise), s = sd(f_noise))
+m1_data %>% summarise(min = min(f_synergy), max = max(f_synergy), mean = mean(f_synergy), s = sd(f_synergy))
+m1_data %>% summarise(min = min(f_price), max = max(f_price), mean = mean(f_price), s = sd(f_price))
+m1_data %>% summarise(min = min(f_neural), max = max(f_neural), mean = mean(f_neural), s = sd(f_neural))
+m1_data %>% summarise(min = min(user_pcmac), max = max(user_pcmac), mean = mean(user_pcmac), s = sd(user_pcmac))
+m1_data %>% summarise(min = min(familiarity_m1), max = max(familiarity_m1), mean = mean(familiarity_m1), s = sd(familiarity_m1))
+m1_data %>% summarise(min = min(status), max = max(status), mean = mean(status), s = sd(status))
+m1_data %>% summarise(min = min(domain), max = max(domain), mean = mean(domain), s = sd(domain))
+m1_data %>% summarise(min = min(gender), max = max(gender), mean = mean(gender), s = sd(gender))
+m1_data %>% summarise(min = min(trust_apple), max = max(trust_apple), mean = mean(trust_apple), s = sd(trust_apple))
+m1_data %>% summarise(min = min(m1_consideration), max = max(m1_consideration), mean = mean(m1_consideration), s = sd(m1_consideration))
+m1_data %>% summarise(min = min(apple_count), max = max(apple_count), mean = mean(apple_count), s = sd(apple_count))
+m1_data %>% summarise(min = min(age_computer), max = max(age_computer), mean = mean(age_computer), s = sd(age_computer))
+m1_data %>% summarise(min = min(interest_computers), max = max(interest_computers), mean = mean(interest_computers), s = sd(interest_computers))
+
+```
+
+# data scaling
+
+```{r}
+## Separate predictor variables for scaling
+predictors <- m1_data 
+predictors$m1_purchase <- NULL
+
+## Set parameters for scaling data
+scaling_params <- preProcess(predictors, method = c("center", "scale"))
+
+## Scale the data using the saved parameters
+data_scaled <- predict(scaling_params, predictors)
+
+## Reattach and rename the class column, set columns to appropriate value types
+m1s_data = data_scaled %>%
+  mutate(m1_purchase = m1_data$m1_purchase)
+
+```
+
+# Exploratory analysis Visualisations - Product features
+
+```{r}
+
+#price
+ggplot(m1_data, aes(x = f_price, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+      theme_bw()
+
+#battery
+ggplot(m1_data, aes(x = f_battery, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw()  +       labs( x =("Importance of Battery Life (Scale 1 - 5)"),
+         y = ("Count"),
+         title = ("Purchases Based on the Importance of Battery Life"))
+
+#noise
+ggplot(m1_data, aes(x = f_noise, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() 
+
+#size
+ggplot(m1_data, aes(x = f_size, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw()
+
+#multi
+ggplot(m1_data, aes(x = f_multi, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() 
+
+#performance
+ggplot(m1_data, aes(x = f_performance, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw()  +       labs( x =("Importance of Performance (Scale 1 - 5)"),
+         y = ("Count"),
+         title = ("Purchases Based on the Importance of Laptop Performance"))
+
+#neural
+ggplot(m1_data, aes(x = f_neural, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() 
+
+#synergy
+ggplot(m1_data, aes(x = f_synergy, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() 
+
+#performance loss
+ggplot(m1_data, aes(x = f_perloss, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() 
+
+#m1 consideration
+ggplot(m1_data, aes(x = m1_consideration, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() +       labs( x =("Importance of the M1 Chip (Scale 1 - 5)"),
+         y = ("Count"),
+         title = ("Purchases Based on the Importance of the Apple M1 Chip"))
+
+
+```
+
+## Exploratory analysis Visualisations - General questions and Demographic
+
+```{r}
+
+#user_pcmac
+ggplot(m1_data, aes(x = user_pcmac, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() + 
+        labs( 
+         y = ("Count"),
+         title = ("Purchases Based on Apple and PC Users")) +
+          scale_x_discrete(labels = c("Apple", "PC")) 
+
+#age_computer
+ggplot(m1_data, aes(x = age_computer, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() + 
+        labs(x = ("Age of Computer (Years)"),
+         y = ("Count"),
+         title = ("Purchases Based on Age of Current Computer")) +
+          scale_x_continuous(breaks = c(0, 1, 2, 3, 4, 5, 6,7,8,9), # 
+                     minor_breaks = NULL,
+                     labels = c("<1", "1","2","3","4","5","6","7","8","9")) # No 
+
+#trust_apple
+ggplot(m1_data, aes(x = trust_apple, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() + 
+        labs(x = ("Trust Apple"), 
+         y = ("Count"),
+         title = ("Purchases Based on Trust of the Apple Brand")) +
+          scale_x_discrete(labels = c("No", "Yes")) 
+
+#age
+ggplot(m1_data, aes(x = age, fill = m1_purchase)) +
+  geom_bar(position = "dodge") + scale_x_continuous(breaks = c(18,23,28,33,38,43,48,53,58,63), minor_breaks = NULL) +
+  theme_bw() + 
+        labs(x = ("Age (Years)"), 
+         y = ("Count"),
+         title = ("Purchases Based on Age")) #+
+         # scale_x_discrete(labels = c("No", "Yes")) 
+
+#gender
+ggplot(m1_data, aes(x = gender, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() + 
+        labs(x = ("Gender"), 
+         y = ("Count"),
+         title = ("Purchases Based on Gender")) +
+          scale_x_discrete(labels = c("Female", "Male")) 
+
+#status
+ggplot(m1_data, aes(x = status, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() + 
+        labs(x = ("Status"), 
+         y = ("Count"),
+         title = ("Purchases Based on Status")) +
+          scale_x_discrete(labels = c("Student", "Employed"))
+
+
+#domain
+ggplot(m1_data, aes(x = domain, fill = m1_purchase)) +
+  geom_bar(position = "dodge") +
+  theme_bw() + 
+        labs(x = ("Domain"), 
+         y = ("Count"),
+         title = ("Purchases Based on Domain")) +
+          scale_x_discrete(labels = c("Science & IT", "Business & Legal", "Humanities"))
+
+
+#income
+ggplot(m1_data, aes(x = income, fill = m1_purchase)) +
+  geom_bar(position = "dodge") + scale_x_continuous(breaks = c(0,7500,15000, 22500,30000,37500,45000, 52500,60000, 67500,75000), minor_breaks = NULL) +
+  theme_bw() + 
+        labs(x = ("Annual Income"), 
+         y = ("Count"),
+         title = ("Purchases Based on Income"))
+
+#apple_count
+ggplot(m1_data, aes(x = apple_count, fill = m1_purchase)) +
+  geom_bar(position = "dodge") + scale_x_continuous(breaks = c(0, 1, 2, 3, 4, 5, 6,7,8), # 
+                     minor_breaks = NULL,
+                     labels = c("0", "1","2","3","4","5","6","7","8")) +
+  theme_bw() + 
+        labs(x = ("Apple Products Owned"),
+         y = ("Count"),
+         title = ("Purchases Based on Number of Owned Apple Products")) 
+
+```
+
+# Feature selection - Pearson Correlation
+
+```{r}
+
+cormat <- cor(m1s_data)
+
+library(reshape2)
+melted_cormat <- melt(cormat)
+
+# Heatmap
+library(ggplot2)
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, 
+    size = 9, hjust = 1))+
+ coord_fixed() + labs(y = NULL) + labs(x = NULL)
+
+```
+
+# Feature selection - Randon Forest Variable Importance
+
+```{r}
+m1_df <- m1s_data
+
+n <- nrow(m1_df)  # the number of data points in the data set (133)
+set.seed(9)    # so that we get the same numbers in the random sample in the next line each time we run the code
+train <- sample(1:n, size = 99) # 99 rows will be used for training from the total data set
+
+test <- m1_df[-train, ] # test data
+test_cl <- m1_df$m1_purchase[-train]  # class labels for test data
+
+training <- m1_df[train, ]
+train_cl <- m1_df$m1_purchase[train]
+
+library(randomForest)
+set.seed(32)
+bag.tree <- randomForest(m1_purchase ~ ., data = m1_df, subset = train, 
+                         mtry = 5, importance = TRUE)
+
+# How well does this bagged model perform on the test set?
+  
+bag.pred <- predict(bag.tree, test, type = "class") 
+
+tab <- table(bag.pred, test_cl) 
+tab
+
+(tab[1,2] + tab[2,1]) / sum(tab)   # test error for bagged tree
+
+1 - (tab[1,2] + tab[2,1]) / sum(tab) # accuracy 
+
+# Importance of variables:
+
+varImpPlot(bag.tree)
+
+
+```
+
+# Final Features
+
+```{r}
+#select the final variables to best tested
+m1_df <- m1s_data
+
+m1_df$f_battery <- NULL
+#m1_df$f_multi <- NULL
+m1_df$f_performance <- NULL
+m1_df$f_perloss <- NULL
+m1_df$f_size <- NULL
+m1_df$f_noise <- NULL
+#m1_df$f_synergy <- NULL
+m1_df$f_price <- NULL
+m1_df$f_neural <- NULL
+m1_df$age <- NULL
+m1_df$familiarity_m1 <- NULL
+m1_df$interest_computers <- NULL
+m1_df$gender <- NULL
+m1_df$income <- NULL
+m1_df$status <- NULL
+#m1_df$domain <- NULL
+```
+
+## Data Splitting
+
+```{r}
+#create 10 fold cross validation of training set
+set.seed(2)
+
+m1_split <- initial_split(m1_df, strata = m1_purchase)
+m1_train <- training(m1_split)
+m1_test <- testing(m1_split)
+
+
+set.seed(937)
+m1_folds <- vfold_cv(m1_train, v=10)
+m1_folds
+```
+
+
+## Preprocessing Recipe + SMOTE
+
+```{r js}
+#upsampling the target variable with SMOTE
+m1_rec <-
+  recipe(m1_purchase ~., data = m1_train) %>%
+  step_smote(m1_purchase)
+
+m1_rec 
+
+print(m1_rec)
+#m1_rec %>% prep() %>% bake(new_data = NULL) %>% count(m1_purchase)
+```
+
+# Building Models
+
+```{r logstic regression model}
+
+#enable parallel processing for faster calculations
+all_cores <- parallel::detectCores(logical = FALSE)-1
+print(all_cores)
+
+cl <- makePSOCKcluster(all_cores)
+print(cl)
+
+registerDoParallel(cl)
+
+#create logistic regression model
+args(logistic_reg)
+glm_spec <- logistic_reg(mode = "classification", penalty = 12) %>%
+  set_engine("glm")
+
+```
+
+```{r random forest model}
+#create random forest model
+args(rand_forest)
+rf_spec <- rand_forest(trees = 500,
+                       mtry = 2,
+                       min_n = 4) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity")
+
+#hyperparameter tuning to achieve the best model accuracy
+
+#tune_rf <- 
+#  rand_forest(
+#    mtry = tune(),
+#    min_n = tune(),
+#    trees = 500,
+#    mode = "classification",
+#    engine = "ranger",
+#    importance = "impurity"
+#)
+
+#grid_tune_rf <- grid_regular(mtry(range = c(1, 7)),
+#                               min_n(range = c(1, 30)),
+#                               levels = 10)
+
+#set.seed(837)
+#rf_wf <- workflow() %>% 
+#  add_model(tune_rf) %>% 
+#  add_formula(m1_purchase ~ .)
+
+#rf_pred_tuned <- 
+#  rf_wf %>%
+#  tune::tune_grid(
+#    resamples = m1_folds,
+#    grid = grid_tune_rf
+#  )
+
+#rf_pred_tuned
+
+#rf_pred_tuned %>% 
+#  tune::select_best("accuracy")
+
+#best_rf <- rf_pred_tuned %>%
+#  tune::select_best("accuracy")
+
+#best_rf
+
+#final_wf <-
+#  rf_wf %>%
+#  finalize_workflow(best_rf)
+
+#final_wf
+
+```
+
+```{r decision tree model}
+#create decision tree model
+args(decision_tree)
+tunedt_spec <- 
+  decision_tree(
+    cost_complexity = 0.0000000001,
+    tree_depth = 4, 
+    mode = "classification",
+    engine = "rpart"
+)
+
+#hyperparameter tuning to achieve best model accuracy
+
+#tune_tree <- 
+#  decision_tree(
+#    cost_complexity = tune(),
+#    tree_depth = tune(), 
+#    mode = "classification",
+#    engine = "rpart"
+#)
+
+#grid_tune_tree <- grid_regular(dials::cost_complexity(),
+#                               dials::tree_depth(),
+#                               levels = 10)
+
+#set.seed(837)
+#tree_wf <- workflow() %>% 
+#  add_model(tune_tree) %>% 
+#  add_formula(m1_purchase ~ .)
+
+#tree_pred_tuned <- 
+#  tree_wf %>%
+#  tune::tune_grid(
+#    resamples = m1_folds,
+#    grid = grid_tune_tree
+#  )
+
+#tree_pred_tuned %>% 
+#  tune::select_best("roc_auc")
+
+#best_tree <- tree_pred_tuned %>%
+#  tune::select_best("roc_auc")
+
+#best_tree
+
+#final_wf <-
+#  tree_wf %>%
+#  finalize_workflow(best_tree)
+
+#final_wf
+
+```
+
+```{r naive bayes model}
+#create naive bayes model
+args(naive_Bayes)
+
+nb_spec <- naive_Bayes(
+  mode = "classification",
+  engine = "naivebayes"
+)
+
+```
+
+```{r svm models}
+#create support vector machine models
+args(svm_rbf)
+args(svm_poly)
+
+
+svm_specp <- svm_poly(
+  mode = "classification",
+  engine = "kernlab", cost = 85
+)
+  
+svm_specr <- svm_rbf(
+  mode = "classification",
+  engine = "kernlab", cost = 1
+) 
+
+
+```
+
+```{r neural network model}
+#create neural network model
+args(mlp)
+
+nn_spec <- mlp(
+  mode = "classification",
+  engine = "nnet",
+  hidden_units = 2,
+  penalty = 2,
+  epochs = 100
+)
+
+```
+
+# Add recipe to workflow
+
+```{r js2}
+m1_wf <- workflow() %>%
+  add_recipe(m1_rec)
+  
+
+m1_wf
+```
+
+# Fit models for workflow on validation dataset
+
+```{r js}
+#fit models to the workflow and train on 10 fold cross validation training sets
+
+#tuned decision tree
+tdt_rs <- m1_wf %>%
+  add_model(tunedt_spec) %>%
+  fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+
+
+#svmp
+svmp_rs <- m1_wf %>%
+  add_model(svm_specp) %>%
+fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+
+#svmr
+svmr_rs <- m1_wf %>%
+  add_model(svm_specr) %>%
+  fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+
+#nb
+nb_rs <- m1_wf %>%
+  add_model(nb_spec) %>%
+  fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+
+#random forests
+rf_rs <- m1_wf %>%
+  add_model(rf_spec) %>%
+  fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+
+#logistic regression
+glm_rs <- m1_wf %>%
+  add_model(glm_spec) %>%
+  fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+
+#neural network
+nn_rs <- m1_wf %>%
+  add_model(nn_spec) %>%
+  fit_resamples(
+    resamples = m1_folds,
+    metrics = metric_set(roc_auc, accuracy, sens, spec, f_meas, kap),
+    control = control_resamples(save_pred = TRUE, verbose = TRUE)
+)
+```
+
+## Evaluating the models
+
+```{r js}
+#collect each model results for accuracy, f_measure, kappa, roc_auc, sensitivity and specificity
+collect_metrics(glm_rs)
+collect_metrics(tdt_rs)
+collect_metrics(rf_rs)
+collect_metrics(nb_rs)
+collect_metrics(svmr_rs)
+collect_metrics(svmp_rs)
+collect_metrics(nn_rs)
+
+```
+
+```{r ROC Curve and Variable Importance Plot}
+#creating roc curves and variable importance plot
+rf_rs %>%
+  collect_predictions() 
+
+rf_rs %>%
+  collect_predictions() %>%
+  roc_curve(m1_purchase, .pred_0) %>%
+  ggplot(aes(1 - specificity, sensitivity)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_path(show.legend = FALSE, alpha = 1, size = 1.2, color = "chocolate1") +
+  theme_bw() + 
+        labs(
+         title = ("Random Forest ROC/AUC Curve")) +
+  coord_equal()
+
+nn_rs %>%
+  collect_predictions() %>%
+  roc_curve(m1_purchase, .pred_0) %>%
+  ggplot(aes(1 - specificity, sensitivity)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_path(show.legend = FALSE, alpha = 1, size = 1.2, color = "deepskyblue") +
+  theme_bw() + 
+        labs(
+         title = ("Neural Network ROC/AUC Curve")) +
+  coord_equal()
+
+#vip
+  
+final_tree_pred <-
+  rf_wf %>%
+  fit(data = m1_train)
+
+final_tree_pred
+
+final_tree_pred %>% extract_fit_parsnip() %>%
+  vip(aesthetics = list(color = "black", fill = "#26ACB5")) + theme_minimal()
+
+```
+
+# Final Test Set Prediction
+
+```{r}
+#using the trained models to make a final prediction of the testing set and collecting the results
+m1_finalglm <- m1_wf %>% 
+  add_model(glm_spec) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finalglm)
+
+m1_finaltdt <- m1_wf %>% 
+  add_model(tunedt_spec) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finaltdt)
+
+m1_finalrf <- m1_wf %>% 
+  add_model(rf_spec) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finalrf)
+
+m1_finalnb <- m1_wf %>% 
+  add_model(nb_spec) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finalnb)
+
+m1_finalsvmr <- m1_wf %>% 
+  add_model(svm_specr) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finalsvmr)
+
+m1_finalsvmp <- m1_wf %>% 
+  add_model(svm_specp) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finalsvmp)
+
+m1_finalnn <- m1_wf %>% 
+  add_model(nn_spec) %>%
+  last_fit(m1_split)
+
+collect_metrics(m1_finalnn)
+
+```
+
